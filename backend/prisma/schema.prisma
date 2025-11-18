@@ -1,0 +1,226 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserType {
+  USER
+  SCHOOL
+  GOVERNMENT
+}
+
+enum DonationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum CollectionStatus {
+  PENDING
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum RewardRequestStatus {
+  PENDING
+  APPROVED
+  DENIED
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  COLLECTION
+  REWARD
+  SOAP
+}
+
+model User {
+  id            String   @id @default(uuid())
+  name          String
+  email         String   @unique
+  password      String
+  cpf           String?  @unique
+  phone         String?
+  address       String?
+  neighborhood  String?
+  city          String?
+  bolsaFamilia  String?  @unique
+  hasBolsaFamilia Boolean @default(false)
+  totalLiters   Float    @default(0)
+  rewardsEarned Int      @default(0)
+  co2Saved      Float    @default(0)
+  level         String   @default("Bronze")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  donations     Donation[]
+  pickups       Pickup[]
+
+  @@map("users")
+}
+
+model School {
+  id                String   @id @default(uuid())
+  name              String
+  cnpj              String   @unique
+  email             String   @unique
+  password          String
+  address           String
+  neighborhood      String
+  city              String
+  lat               Float?
+  lng               Float?
+  responsibleName   String
+  responsiblePhone  String
+  responsibleEmail  String
+  storageCapacity   String
+  totalLiters       Float    @default(0)
+  collectionCount   Int      @default(0)
+  points            Int      @default(0)
+  capacity          Int      @default(0)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  donations         Donation[]
+  collections       Collection[]
+  rewardRequests    RewardRequest[]
+
+  @@map("schools")
+}
+
+model Government {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("governments")
+}
+
+model Donation {
+  id          String         @id @default(uuid())
+  userId      String
+  schoolId    String
+  liters      Float
+  status      DonationStatus @default(PENDING)
+  code        String         @unique
+  qrCode      String?
+  donatedAt   DateTime       @default(now())
+  confirmedAt DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school      School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@map("donations")
+}
+
+model Collection {
+  id              String           @id @default(uuid())
+  schoolId        String
+  requestedLiters Float?
+  collectedLiters Float?
+  preferredDate   DateTime?
+  scheduledDate   DateTime?
+  completedDate   DateTime?
+  status          CollectionStatus @default(PENDING)
+  points          Int              @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  school          School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@map("collections")
+}
+
+model Reward {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String
+  points      Int
+  image       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  requests    RewardRequest[]
+
+  @@map("rewards")
+}
+
+model RewardRequest {
+  id          String              @id @default(uuid())
+  schoolId    String
+  rewardId    String
+  status      RewardRequestStatus @default(PENDING)
+  requestedAt DateTime            @default(now())
+  approvedAt  DateTime?
+  deniedAt    DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  school      School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  reward      Reward              @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+
+  @@map("reward_requests")
+}
+
+model PickupLocation {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  address   String
+  date      DateTime
+  startTime String
+  endTime   String
+  available Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  pickups   Pickup[]
+
+  @@map("pickup_locations")
+}
+
+model Pickup {
+  id               String   @id @default(uuid())
+  userId           String
+  pickupLocationId String
+  qrCode           String?
+  pickedUpAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pickupLocation   PickupLocation   @relation(fields: [pickupLocationId], references: [id], onDelete: Cascade)
+
+  @@map("pickups")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  type      NotificationType
+  title     String?
+  message   String
+  userId    String?
+  schoolId  String?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@map("notifications")
+}
+

@@ -3,6 +3,8 @@ import { ArrowLeft, Droplet, Mail, Lock, User, School, Building2 } from 'lucide-
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { toast } from 'sonner';
+import { authApi } from '../services/api';
 import type { UserType } from '../App';
 
 interface LoginScreenProps {
@@ -15,10 +17,21 @@ interface LoginScreenProps {
 export default function LoginScreen({ userType, onLogin, onRegister, onBack }: LoginScreenProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onLogin();
+    setLoading(true);
+    
+    try {
+      await authApi.login(email, password, userType!);
+      toast.success('Login realizado com sucesso!');
+      onLogin();
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao fazer login');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const getUserTypeInfo = () => {
@@ -135,10 +148,11 @@ export default function LoginScreen({ userType, onLogin, onRegister, onBack }: L
 
             <Button
               type="submit"
+              disabled={loading}
               className="w-full h-12 text-white rounded-xl transition-all hover:scale-[1.02]"
               style={{ backgroundColor: info.color }}
             >
-              Entrar
+              {loading ? 'Entrando...' : 'Entrar'}
             </Button>
 
             {userType !== 'government' && (

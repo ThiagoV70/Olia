@@ -4,6 +4,8 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Checkbox } from './ui/checkbox';
+import { toast } from 'sonner';
+import { authApi } from '../services/api';
 
 interface RegisterUserProps {
   onComplete: () => void;
@@ -24,10 +26,43 @@ export default function RegisterUser({ onComplete, onBack }: RegisterUserProps) 
     bolsaFamilia: '',
     hasBolsaFamilia: false,
   });
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onComplete();
+    
+    if (formData.password !== formData.confirmPassword) {
+      toast.error('As senhas não coincidem');
+      return;
+    }
+
+    if (formData.hasBolsaFamilia && !formData.bolsaFamilia) {
+      toast.error('Informe o número do Bolsa Família');
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      await authApi.registerUser({
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        cpf: formData.cpf || undefined,
+        phone: formData.phone || undefined,
+        address: formData.address || undefined,
+        neighborhood: formData.neighborhood || undefined,
+        city: formData.city || undefined,
+        bolsaFamilia: formData.bolsaFamilia || undefined,
+        hasBolsaFamilia: formData.hasBolsaFamilia,
+      });
+      toast.success('Conta criada com sucesso!');
+      onComplete();
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao criar conta');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleChange = (field: string, value: string | boolean) => {
@@ -268,9 +303,10 @@ export default function RegisterUser({ onComplete, onBack }: RegisterUserProps) 
 
             <Button
               type="submit"
+              disabled={loading}
               className="w-full h-12 bg-[#6B8E23] hover:bg-[#5a7a1e] text-white rounded-xl transition-all hover:scale-[1.02]"
             >
-              Criar Conta
+              {loading ? 'Criando conta...' : 'Criar Conta'}
             </Button>
           </form>
         </div>

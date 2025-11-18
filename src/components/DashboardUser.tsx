@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import {
   Droplet,
@@ -26,7 +26,8 @@ import AnimatedButton from './AnimatedButton';
 import QRCodeModal from './QRCodeModal';
 import LoadingAnimation from './LoadingAnimation';
 import { Notification } from './NotificationBanner';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
+import { userApi, schoolApi, donationApi, pickupApi, authApi } from '../services/api';
 
 interface DashboardUserProps {
   onLogout: () => void;
@@ -40,125 +41,114 @@ export default function DashboardUser({ onLogout, showNotification }: DashboardU
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [showProfileEdit, setShowProfileEdit] = useState(false);
+  const [loading, setLoading] = useState(true);
+  
+  const [userData, setUserData] = useState<any>(null);
+  const [userStats, setUserStats] = useState<any>(null);
+  const [schools, setSchools] = useState<any[]>([]);
+  const [donationHistory, setDonationHistory] = useState<any[]>([]);
+  const [pickupLocations, setPickupLocations] = useState<any[]>([]);
+  
+  const [editFormData, setEditFormData] = useState<any>({});
 
-  // Mock data
-  const userData = {
-    name: 'Maria Silva',
-    email: 'maria.silva@email.com',
-    cpf: '123.456.789-00',
-    address: 'Rua das Flores, 123 - Centro',
-    bolsaFamilia: 'SIM123456',
-    totalLiters: 12.5,
-    nextReward: 15,
-    rewardsEarned: 2,
-    level: 'Bronze',
-    co2Saved: 25,
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [profile, stats, schoolsData, donations, pickups] = await Promise.all([
+        userApi.getProfile().catch(() => null),
+        userApi.getStats().catch(() => null),
+        schoolApi.getAll().catch(() => []),
+        donationApi.getUserDonations().catch(() => []),
+        pickupApi.getLocations().catch(() => []),
+      ]);
+
+      if (profile) {
+        setUserData(profile);
+        setEditFormData(profile);
+      }
+      if (stats) setUserStats(stats);
+      setSchools(schoolsData);
+      setDonationHistory(donations);
+      setPickupLocations(pickups);
+    } catch (error: any) {
+      toast.error('Erro ao carregar dados');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const schools = [
-    {
-      id: 1,
-      name: 'Escola Municipal Santos Dumont',
-      distance: '0.8 km',
-      address: 'Rua das Flores, 123',
-      neighborhood: 'Centro',
-      hours: '8h - 17h',
-      capacity: 85,
-      lat: -23.5505,
-      lng: -46.6333,
-    },
-    {
-      id: 2,
-      name: 'Escola Estadual Machado de Assis',
-      distance: '1.2 km',
-      address: 'Av. Principal, 456',
-      neighborhood: 'Centro',
-      hours: '7h - 18h',
-      capacity: 92,
-      lat: -23.5515,
-      lng: -46.6343,
-    },
-    {
-      id: 3,
-      name: 'Escola Municipal Tiradentes',
-      distance: '1.5 km',
-      address: 'Rua da Paz, 789',
-      neighborhood: 'Jardim',
-      hours: '8h - 17h',
-      capacity: 70,
-      lat: -23.5525,
-      lng: -46.6353,
-    },
-  ];
+  const progress = userStats ? (userStats.totalLiters / userStats.nextReward) * 100 : 0;
 
-  const donationHistory = [
-    {
-      id: 1,
-      date: '05/10/2025',
-      liters: 2,
-      school: 'Escola Municipal Santos Dumont',
-      status: 'confirmed',
-      code: 'DOA-2025-001',
-    },
-    {
-      id: 2,
-      date: '28/09/2025',
-      liters: 3.5,
-      school: 'Escola Estadual Machado de Assis',
-      status: 'confirmed',
-      code: 'DOA-2025-002',
-    },
-    {
-      id: 3,
-      date: '15/09/2025',
-      liters: 4,
-      school: 'Escola Municipal Santos Dumont',
-      status: 'pending',
-      code: 'DOA-2025-003',
-    },
-  ];
+  const handleDonateClick = async (school: any) => {
+    try {
+      // Aqui você pode pedir a quantidade de litros ao usuário
+      const liters = prompt('Quantos litros você deseja doar?');
+      if (!liters || parseFloat(liters) <= 0) return;
 
-  const pickupLocations = [
-    {
-      id: 1,
-      name: 'Farmácia Popular Centro',
-      address: 'Av. Central, 100',
-      date: '15/10/2025',
-      time: '9h - 16h',
-      available: true,
-    },
-    {
-      id: 2,
-      name: 'Farmácia Popular Jardim',
-      address: 'Rua do Jardim, 250',
-      date: '16/10/2025',
-      time: '8h - 17h',
-      available: true,
-    },
-  ];
-
-  const progress = (userData.totalLiters / userData.nextReward) * 100;
-
-  const handleDonateClick = (school: any) => {
-    setSelectedSchool(school);
-    setShowQRModal(true);
-    toast.success('Intenção de doação registrada!');
+      const response = await donationApi.create(school.id, parseFloat(liters));
+      setSelectedSchool(school);
+      setShowQRModal(true);
+      toast.success('Doação registrada com sucesso!');
+      loadData(); // Recarregar dados
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao registrar doação');
+    }
   };
 
-  const handlePickupClick = (location: any) => {
-    setShowQRModal(true);
-    toast.success('Retirada confirmada!');
-    showNotification({
-      id: Date.now().toString(),
-      type: 'soap',
-      message: `Sabão disponível para retirada em ${location.name}`,
-    });
+  const handlePickupClick = async (location: any) => {
+    try {
+      await pickupApi.request(location.id);
+      setShowQRModal(true);
+      toast.success('Retirada confirmada!');
+      showNotification({
+        id: Date.now().toString(),
+        type: 'soap',
+        message: `Sabão disponível para retirada em ${location.name}`,
+      });
+      loadData();
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao confirmar retirada');
+    }
   };
 
-  const handleSaveProfile = () => {
-    toast.success('Alterações salvas com sucesso!');
-    setShowProfileEdit(false);
+  const handleSaveProfile = async () => {
+    try {
+      await userApi.updateProfile(editFormData);
+      toast.success('Alterações salvas com sucesso!');
+      setShowProfileEdit(false);
+      loadData();
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao salvar alterações');
+    }
   };
+
+  const handleLogout = () => {
+    authApi.logout();
+    onLogout();
+  };
+
+  if (loading) {
+    return (
+      <div className="h-screen bg-[#F4F1ED] flex items-center justify-center">
+        <LoadingAnimation />
+      </div>
+    );
+  }
+
+  if (!userData) {
+    return (
+      <div className="h-screen bg-[#F4F1ED] flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-[#1E4D4C] mb-4">Erro ao carregar dados do usuário</p>
+          <Button onClick={loadData}>Tentar novamente</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen bg-[#F4F1ED] flex flex-col overflow-hidden">
@@ -183,10 +173,10 @@ export default function DashboardUser({ onLogout, showNotification }: DashboardU
           <div className="flex items-center gap-4">
             <div className="hidden lg:flex items-center gap-2">
               <User className="w-5 h-5 text-[#1E4D4C]" />
-              <span className="text-[#1E4D4C]">{userData.name}</span>
+              <span className="text-[#1E4D4C]">{userData?.name || 'Carregando...'}</span>
             </div>
             <AnimatedButton
-              onClick={onLogout}
+              onClick={handleLogout}
               variant="outline"
               className="flex items-center gap-2"
               ariaLabel="Sair da conta"
@@ -303,9 +293,9 @@ export default function DashboardUser({ onLogout, showNotification }: DashboardU
                       <div className="flex items-start justify-between mb-4">
                         <div>
                           <h3 className="text-[#1E4D4C] mb-1">{selectedSchool.name}</h3>
-                          <div className="flex items-center gap-2 text-[#6B8E23] mb-2">
+                            <div className="flex items-center gap-2 text-[#6B8E23] mb-2">
                             <Navigation className="w-4 h-4" />
-                            <span className="text-sm">{selectedSchool.distance}</span>
+                            <span className="text-sm">{selectedSchool.neighborhood || 'Bairro'}</span>
                           </div>
                         </div>
                         <motion.button
@@ -324,14 +314,10 @@ export default function DashboardUser({ onLogout, showNotification }: DashboardU
                           <MapPin className="w-4 h-4 flex-shrink-0" />
                           <span className="text-sm">{selectedSchool.address}</span>
                         </div>
-                        <div className="flex items-center gap-2 text-[#1E4D4C]">
-                          <Clock className="w-4 h-4 flex-shrink-0" />
-                          <span className="text-sm">Horário: {selectedSchool.hours}</span>
-                        </div>
                         <div className="flex items-center gap-2">
                           <span className="text-[#1E4D4C] text-sm">Capacidade disponível:</span>
                           <Badge variant="outline" className="bg-[#6B8E23]/10 text-[#6B8E23]">
-                            {selectedSchool.capacity}%
+                            {selectedSchool.capacity || 0}%
                           </Badge>
                         </div>
                       </div>
@@ -379,29 +365,29 @@ export default function DashboardUser({ onLogout, showNotification }: DashboardU
                                 <div className="w-12 h-12 rounded-full bg-[#6B8E23]/10 flex items-center justify-center">
                                   <Droplet className="w-6 h-6 text-[#6B8E23]" />
                                 </div>
-                                <div>
-                                  <h4 className="text-[#1E4D4C]">{donation.school}</h4>
-                                  <div className="flex items-center gap-2 text-sm text-[#1E4D4C]/70">
-                                    <Calendar className="w-3 h-3" />
-                                    {donation.date}
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="ml-15 space-y-2">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[#1E4D4C]/70">Quantidade:</span>
-                                  <span className="text-[#6B8E23]">{donation.liters}L</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[#1E4D4C]/70">Código:</span>
-                                  <span className="text-[#1E4D4C] font-mono text-sm">
-                                    {donation.code}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                            <div>
-                              {donation.status === 'confirmed' ? (
+                        <div>
+                          <h4 className="text-[#1E4D4C]">{donation.school?.name || 'Escola'}</h4>
+                          <div className="flex items-center gap-2 text-sm text-[#1E4D4C]/70">
+                            <Calendar className="w-3 h-3" />
+                            {new Date(donation.donatedAt).toLocaleDateString('pt-BR')}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="ml-15 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[#1E4D4C]/70">Quantidade:</span>
+                          <span className="text-[#6B8E23]">{donation.liters}L</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[#1E4D4C]/70">Código:</span>
+                          <span className="text-[#1E4D4C] font-mono text-sm">
+                            {donation.code}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      {donation.status === 'CONFIRMED' ? (
                                 <Badge className="bg-[#6B8E23] text-white">
                                   <CheckCircle className="w-3 h-3 mr-1" />
                                   Confirmado
@@ -449,7 +435,7 @@ export default function DashboardUser({ onLogout, showNotification }: DashboardU
                         <div>
                           <h3>Você está elegível!</h3>
                           <p className="opacity-90 mt-1">
-                            Cadastro Bolsa Família: {userData.bolsaFamilia}
+                            Cadastro Bolsa Família: {userData.bolsaFamilia || 'Não cadastrado'}
                           </p>
                         </div>
                       </div>
@@ -485,11 +471,11 @@ export default function DashboardUser({ onLogout, showNotification }: DashboardU
                           <div className="space-y-2 mb-4">
                             <div className="flex items-center gap-2 text-[#1E4D4C]">
                               <Calendar className="w-4 h-4" />
-                              <span>{location.date}</span>
+                              <span>{new Date(location.date).toLocaleDateString('pt-BR')}</span>
                             </div>
                             <div className="flex items-center gap-2 text-[#1E4D4C]">
                               <Clock className="w-4 h-4" />
-                              <span>{location.time}</span>
+                              <span>{location.startTime} - {location.endTime}</span>
                             </div>
                           </div>
 
@@ -534,15 +520,15 @@ export default function DashboardUser({ onLogout, showNotification }: DashboardU
                     <CardContent>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="text-center">
-                          <div className="text-3xl mb-1">{userData.totalLiters}L</div>
+                          <div className="text-3xl mb-1">{userStats?.totalLiters || 0}L</div>
                           <p className="opacity-90">Óleo reciclado</p>
                         </div>
                         <div className="text-center">
-                          <div className="text-3xl mb-1">{userData.co2Saved}kg</div>
+                          <div className="text-3xl mb-1">{userStats?.co2Saved || 0}kg</div>
                           <p className="opacity-90">CO₂ evitado</p>
                         </div>
                         <div className="text-center">
-                          <div className="text-3xl mb-1">{userData.rewardsEarned}</div>
+                          <div className="text-3xl mb-1">{userStats?.rewardsEarned || 0}</div>
                           <p className="opacity-90">Sabões recebidos</p>
                         </div>
                       </div>
@@ -563,14 +549,14 @@ export default function DashboardUser({ onLogout, showNotification }: DashboardU
                         Progresso para Próxima Recompensa
                       </CardTitle>
                       <CardDescription>
-                        Faltam {userData.nextReward - userData.totalLiters}L para receber seu próximo sabão
+                        Faltam {userStats ? userStats.nextReward - userStats.totalLiters : 0}L para receber seu próximo sabão
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
                       <Progress value={progress} className="h-3 mb-2" />
                       <div className="flex justify-between text-sm text-[#1E4D4C]/70">
-                        <span>{userData.totalLiters}L</span>
-                        <span>{userData.nextReward}L</span>
+                        <span>{userStats?.totalLiters || 0}L</span>
+                        <span>{userStats?.nextReward || 0}L</span>
                       </div>
                     </CardContent>
                   </Card>
@@ -587,7 +573,10 @@ export default function DashboardUser({ onLogout, showNotification }: DashboardU
                       <CardTitle className="text-[#1E4D4C]">Dados Pessoais</CardTitle>
                       {!showProfileEdit && (
                         <AnimatedButton
-                          onClick={() => setShowProfileEdit(true)}
+                          onClick={() => {
+                            setEditFormData({ ...userData });
+                            setShowProfileEdit(true);
+                          }}
                           variant="outline"
                           className="text-sm"
                           ariaLabel="Editar perfil"
@@ -601,7 +590,8 @@ export default function DashboardUser({ onLogout, showNotification }: DashboardU
                         <label className="text-[#1E4D4C]/70 mb-1 block">Nome completo</label>
                         <input
                           type="text"
-                          defaultValue={userData.name}
+                          value={editFormData.name || ''}
+                          onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
                           disabled={!showProfileEdit}
                           className="w-full p-3 rounded-xl bg-[#F4F1ED] text-[#1E4D4C] disabled:opacity-70 focus:outline-none focus:ring-2 focus:ring-[#6B8E23]"
                           aria-label="Nome completo"
@@ -611,17 +601,29 @@ export default function DashboardUser({ onLogout, showNotification }: DashboardU
                         <label className="text-[#1E4D4C]/70 mb-1 block">Email</label>
                         <input
                           type="email"
-                          defaultValue={userData.email}
+                          value={editFormData.email || ''}
+                          disabled
+                          className="w-full p-3 rounded-xl bg-[#F4F1ED] text-[#1E4D4C] disabled:opacity-70"
+                          aria-label="Email"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[#1E4D4C]/70 mb-1 block">Telefone</label>
+                        <input
+                          type="tel"
+                          value={editFormData.phone || ''}
+                          onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
                           disabled={!showProfileEdit}
                           className="w-full p-3 rounded-xl bg-[#F4F1ED] text-[#1E4D4C] disabled:opacity-70 focus:outline-none focus:ring-2 focus:ring-[#6B8E23]"
-                          aria-label="Email"
+                          aria-label="Telefone"
                         />
                       </div>
                       <div>
                         <label className="text-[#1E4D4C]/70 mb-1 block">Endereço</label>
                         <input
                           type="text"
-                          defaultValue={userData.address}
+                          value={editFormData.address || ''}
+                          onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
                           disabled={!showProfileEdit}
                           className="w-full p-3 rounded-xl bg-[#F4F1ED] text-[#1E4D4C] disabled:opacity-70 focus:outline-none focus:ring-2 focus:ring-[#6B8E23]"
                           aria-label="Endereço"
@@ -631,7 +633,8 @@ export default function DashboardUser({ onLogout, showNotification }: DashboardU
                         <label className="text-[#1E4D4C]/70 mb-1 block">Nº Bolsa Família</label>
                         <input
                           type="text"
-                          defaultValue={userData.bolsaFamilia}
+                          value={editFormData.bolsaFamilia || ''}
+                          onChange={(e) => setEditFormData({ ...editFormData, bolsaFamilia: e.target.value })}
                           disabled={!showProfileEdit}
                           className="w-full p-3 rounded-xl bg-[#F4F1ED] text-[#1E4D4C] disabled:opacity-70 focus:outline-none focus:ring-2 focus:ring-[#6B8E23]"
                           aria-label="Número do Bolsa Família"

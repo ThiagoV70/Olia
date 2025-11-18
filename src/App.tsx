@@ -60,6 +60,7 @@ export default function App() {
   const handleLogout = () => {
     setCurrentScreen('welcome');
     setUserType(null);
+    // O token já é removido no DashboardUser/DashboardSchool/DashboardGovernment
   };
 
   const showNotification = (notif: Notification) => {

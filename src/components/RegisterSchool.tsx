@@ -4,6 +4,8 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { toast } from 'sonner';
+import { authApi } from '../services/api';
 
 interface RegisterSchoolProps {
   onComplete: () => void;
@@ -24,10 +26,39 @@ export default function RegisterSchool({ onComplete, onBack }: RegisterSchoolPro
     password: '',
     confirmPassword: '',
   });
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onComplete();
+    
+    if (formData.password !== formData.confirmPassword) {
+      toast.error('As senhas não coincidem');
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      await authApi.registerSchool({
+        schoolName: formData.schoolName,
+        cnpj: formData.cnpj,
+        email: formData.responsibleEmail,
+        password: formData.password,
+        address: formData.address,
+        neighborhood: formData.neighborhood,
+        city: formData.city,
+        responsibleName: formData.responsibleName,
+        responsiblePhone: formData.responsiblePhone,
+        responsibleEmail: formData.responsibleEmail,
+        storageCapacity: formData.storageCapacity,
+      });
+      toast.success('Escola cadastrada com sucesso!');
+      onComplete();
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao cadastrar escola');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleChange = (field: string, value: string) => {
@@ -277,9 +308,10 @@ export default function RegisterSchool({ onComplete, onBack }: RegisterSchoolPro
 
             <Button
               type="submit"
+              disabled={loading}
               className="w-full h-12 bg-[#6B8E23] hover:bg-[#5a7a1e] text-white rounded-xl transition-all hover:scale-[1.02]"
             >
-              Cadastrar Escola
+              {loading ? 'Cadastrando...' : 'Cadastrar Escola'}
             </Button>
           </form>
         </div>
