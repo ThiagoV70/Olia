@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import {
   Droplet,
@@ -25,8 +25,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import AnimatedButton from './AnimatedButton';
 import ConfettiEffect from './ConfettiEffect';
+import LoadingAnimation from './LoadingAnimation';
 import { Notification } from './NotificationBanner';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
+import { schoolApi, collectionApi, rewardApi, authApi } from '../services/api';
 
 interface DashboardSchoolProps {
   onLogout: () => void;
@@ -40,115 +42,109 @@ export default function DashboardSchool({ onLogout, showNotification }: Dashboar
   const [showConfetti, setShowConfetti] = useState(false);
   const [collectionAmount, setCollectionAmount] = useState('');
   const [collectionDate, setCollectionDate] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  // Mock data
-  const schoolData = {
-    name: 'Escola Municipal Santos Dumont',
-    totalLiters: 485,
-    collections: 32,
-    points: 4850,
-    capacity: 85,
-    ranking: 3,
-    nextReward: 5000,
+  const [schoolData, setSchoolData] = useState<any>(null);
+  const [schoolStats, setSchoolStats] = useState<any>(null);
+  const [ranking, setRanking] = useState<any>(null);
+  const [rewards, setRewards] = useState<any[]>([]);
+  const [collectionHistory, setCollectionHistory] = useState<any[]>([]);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [profile, stats, rankingData, rewardsData, collections] = await Promise.all([
+        schoolApi.getProfile().catch(() => null),
+        schoolApi.getStats().catch(() => null),
+        schoolApi.getRanking().catch(() => null),
+        rewardApi.getAll().catch(() => []),
+        collectionApi.getSchoolCollections().catch(() => []),
+      ]);
+
+      if (profile) setSchoolData(profile);
+      if (stats) setSchoolStats(stats);
+      if (rankingData) setRanking(rankingData);
+      setRewards(rewardsData);
+      setCollectionHistory(collections);
+    } catch (error: any) {
+      toast.error('Erro ao carregar dados');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const rewards = [
-    {
-      id: 1,
-      name: 'Computadores Novos',
-      description: '5 computadores para laboratório de informática',
-      points: 5000,
-      image: '💻',
-      available: true,
-    },
-    {
-      id: 2,
-      name: 'Ventiladores',
-      description: '10 ventiladores para salas de aula',
-      points: 3000,
-      image: '🌀',
-      unlocked: true,
-    },
-    {
-      id: 3,
-      name: 'Material de Laboratório',
-      description: 'Kit completo de ciências',
-      points: 7000,
-      image: '🔬',
-      available: false,
-    },
-    {
-      id: 4,
-      name: 'Livros Didáticos',
-      description: '100 livros para biblioteca',
-      points: 4000,
-      image: '📚',
-      unlocked: true,
-    },
-  ];
+  const progressToNext = schoolStats ? ((schoolStats.points % 5000) / 5000) * 100 : 0;
+  const capacityPercentage = schoolData?.capacity || 0;
+  const currentRank = ranking?.currentRank || null;
 
-  const collectionHistory = [
-    {
-      id: 1,
-      date: '30/09/2025',
-      volume: 45,
-      points: 450,
-      status: 'completed',
-    },
-    {
-      id: 2,
-      date: '15/09/2025',
-      volume: 38,
-      points: 380,
-      status: 'completed',
-    },
-    {
-      id: 3,
-      date: '05/10/2025',
-      volume: 50,
-      points: 500,
-      status: 'scheduled',
-    },
-  ];
-
-  const topSchools = [
-    { name: 'Escola Estadual Machado de Assis', points: 6200, position: 1 },
-    { name: 'Escola Municipal Tiradentes', points: 5800, position: 2 },
-    { name: 'Escola Municipal Santos Dumont', points: 4850, position: 3 },
-    { name: 'Escola Estadual Dom Pedro', points: 4200, position: 4 },
-  ];
-
-  const progressToNext = ((schoolData.points % 5000) / 5000) * 100;
-  const capacityPercentage = schoolData.capacity;
-
-  const handleRequestCollection = () => {
+  const handleRequestCollection = async () => {
     if (!collectionAmount || !collectionDate) {
       toast.error('Preencha todos os campos');
       return;
     }
 
-    toast.success('Coleta solicitada com sucesso!');
-    showNotification({
-      id: Date.now().toString(),
-      type: 'collection',
-      message: `Coleta agendada para ${collectionDate} com ${collectionAmount}L estimados`,
-    });
-    setShowCollectionDialog(false);
-    setCollectionAmount('');
-    setCollectionDate('');
+    try {
+      await collectionApi.request(parseFloat(collectionAmount), collectionDate);
+      toast.success('Coleta solicitada com sucesso!');
+      showNotification({
+        id: Date.now().toString(),
+        type: 'collection',
+        message: `Coleta agendada para ${collectionDate} com ${collectionAmount}L estimados`,
+      });
+      setShowCollectionDialog(false);
+      setCollectionAmount('');
+      setCollectionDate('');
+      loadData();
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao solicitar coleta');
+    }
   };
 
-  const handleRequestReward = (reward: any) => {
-    setShowConfetti(true);
-    toast.success('Recompensa solicitada!');
-    showNotification({
-      id: Date.now().toString(),
-      type: 'reward',
-      message: `Solicitação de ${reward.name} enviada para aprovação`,
-    });
-    setShowRewardDialog(false);
-    setTimeout(() => setShowConfetti(false), 4000);
+  const handleRequestReward = async (reward: any) => {
+    try {
+      await rewardApi.request(reward.id);
+      setShowConfetti(true);
+      toast.success('Recompensa solicitada!');
+      showNotification({
+        id: Date.now().toString(),
+        type: 'reward',
+        message: `Solicitação de ${reward.name} enviada para aprovação`,
+      });
+      setShowRewardDialog(false);
+      setTimeout(() => setShowConfetti(false), 4000);
+      loadData();
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao solicitar recompensa');
+    }
   };
+
+  const handleLogout = () => {
+    authApi.logout();
+    onLogout();
+  };
+
+  if (loading) {
+    return (
+      <div className="h-screen bg-[#F4F1ED] flex items-center justify-center">
+        <LoadingAnimation />
+      </div>
+    );
+  }
+
+  if (!schoolData) {
+    return (
+      <div className="h-screen bg-[#F4F1ED] flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-[#1E4D4C] mb-4">Erro ao carregar dados da escola</p>
+          <Button onClick={loadData}>Tentar novamente</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen bg-[#F4F1ED] flex flex-col overflow-hidden">
@@ -176,7 +172,7 @@ export default function DashboardSchool({ onLogout, showNotification }: Dashboar
           </div>
 
           <AnimatedButton
-            onClick={onLogout}
+            onClick={handleLogout}
             variant="outline"
             className="flex items-center gap-2"
             ariaLabel="Sair da conta"
@@ -207,13 +203,15 @@ export default function DashboardSchool({ onLogout, showNotification }: Dashboar
                         Continue coletando óleo e acumulando recompensas!
                       </p>
                     </div>
-                    <div className="hidden md:flex items-center gap-2 bg-white/20 px-6 py-3 rounded-2xl">
-                      <Trophy className="w-6 h-6" />
-                      <div>
-                        <div className="text-sm opacity-90">Ranking</div>
-                        <div className="text-2xl">{schoolData.ranking}º lugar</div>
+                    {currentRank && (
+                      <div className="hidden md:flex items-center gap-2 bg-white/20 px-6 py-3 rounded-2xl">
+                        <Trophy className="w-6 h-6" />
+                        <div>
+                          <div className="text-sm opacity-90">Ranking</div>
+                          <div className="text-2xl">{currentRank}º lugar</div>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </motion.div>
 
@@ -238,7 +236,7 @@ export default function DashboardSchool({ onLogout, showNotification }: Dashboar
                           transition={{ type: 'spring', stiffness: 200, delay: 0.2 }}
                           className="text-4xl text-[#6B8E23]"
                         >
-                          {schoolData.totalLiters}L
+                          {schoolData.totalLiters || 0}L
                         </motion.div>
                         <p className="text-sm text-[#1E4D4C]/60 mt-1">Óleo recebido</p>
                       </CardContent>
@@ -264,7 +262,7 @@ export default function DashboardSchool({ onLogout, showNotification }: Dashboar
                           transition={{ type: 'spring', stiffness: 200, delay: 0.3 }}
                           className="text-4xl text-[#1E4D4C]"
                         >
-                          {schoolData.collections}
+                          {schoolData.collectionCount || 0}
                         </motion.div>
                         <p className="text-sm text-[#1E4D4C]/60 mt-1">Realizadas</p>
                       </CardContent>
@@ -290,7 +288,7 @@ export default function DashboardSchool({ onLogout, showNotification }: Dashboar
                           transition={{ type: 'spring', stiffness: 200, delay: 0.4 }}
                           className="text-4xl text-[#1E4D4C]"
                         >
-                          {schoolData.points.toLocaleString()}
+                          {(schoolData.points || 0).toLocaleString()}
                         </motion.div>
                         <p className="text-sm text-[#1E4D4C]/80 mt-1">Acumulados</p>
                       </CardContent>
@@ -378,14 +376,14 @@ export default function DashboardSchool({ onLogout, showNotification }: Dashboar
                         Progresso para Próxima Recompensa
                       </CardTitle>
                       <CardDescription>
-                        Faltam {schoolData.nextReward - schoolData.points} pontos para desbloquear
+                        Faltam {schoolStats ? schoolStats.nextReward - schoolStats.points : 0} pontos para desbloquear
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
                       <Progress value={progressToNext} className="h-3 mb-2" />
                       <div className="flex justify-between text-sm text-[#1E4D4C]/70">
-                        <span>{schoolData.points} pts</span>
-                        <span>{schoolData.nextReward} pts</span>
+                        <span>{schoolStats?.points || 0} pts</span>
+                        <span>{schoolStats?.nextReward || 0} pts</span>
                       </div>
                     </CardContent>
                   </Card>
@@ -416,7 +414,7 @@ export default function DashboardSchool({ onLogout, showNotification }: Dashboar
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-[#1E4D4C]/80 mb-1">Pontos Disponíveis</p>
-                          <div className="text-4xl text-[#1E4D4C]">{schoolData.points.toLocaleString()}</div>
+                          <div className="text-4xl text-[#1E4D4C]">{(schoolData.points || 0).toLocaleString()}</div>
                         </div>
                         <div className="w-20 h-20 bg-white/50 rounded-full flex items-center justify-center">
                           <Star className="w-10 h-10 text-[#1E4D4C]" />
@@ -427,59 +425,78 @@ export default function DashboardSchool({ onLogout, showNotification }: Dashboar
                 </motion.div>
 
                 {/* Rewards Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {rewards.map((reward, index) => (
-                    <motion.div
-                      key={reward.id}
-                      initial={{ y: 20, opacity: 0 }}
-                      animate={{ y: 0, opacity: 1 }}
-                      transition={{ delay: index * 0.1 }}
-                    >
-                      <Card className={`border-none shadow-lg ${reward.unlocked ? 'ring-2 ring-[#6B8E23]' : ''}`}>
-                        <CardContent className="p-6">
-                          <div className="flex items-start justify-between mb-4">
-                            <div className="flex items-start gap-4">
-                              <div className="w-16 h-16 rounded-2xl bg-[#F4F1ED] flex items-center justify-center text-3xl">
-                                {reward.image}
+                {rewards.length === 0 ? (
+                  <Card className="border-none shadow-lg">
+                    <CardContent className="p-12 text-center">
+                      <Gift className="w-16 h-16 text-[#1E4D4C]/30 mx-auto mb-4" />
+                      <p className="text-[#1E4D4C]/70">Nenhuma recompensa disponível no momento</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {rewards.map((reward, index) => {
+                      const canRequest = (schoolData.points || 0) >= reward.points;
+                      const isRequested = reward.status === 'pending' || reward.status === 'approved' || reward.requested;
+                      
+                      return (
+                        <motion.div
+                          key={reward.id}
+                          initial={{ y: 20, opacity: 0 }}
+                          animate={{ y: 0, opacity: 1 }}
+                          transition={{ delay: index * 0.1 }}
+                        >
+                          <Card className={`border-none shadow-lg ${isRequested ? 'ring-2 ring-[#6B8E23]' : ''}`}>
+                            <CardContent className="p-6">
+                              <div className="flex items-start justify-between mb-4">
+                                <div className="flex items-start gap-4">
+                                  <div className="w-16 h-16 rounded-2xl bg-[#F4F1ED] flex items-center justify-center text-3xl">
+                                    {reward.image || '🎁'}
+                                  </div>
+                                  <div>
+                                    <h4 className="text-[#1E4D4C] mb-1">{reward.name}</h4>
+                                    <p className="text-sm text-[#1E4D4C]/70">{reward.description}</p>
+                                  </div>
+                                </div>
                               </div>
-                              <div>
-                                <h4 className="text-[#1E4D4C] mb-1">{reward.name}</h4>
-                                <p className="text-sm text-[#1E4D4C]/70">{reward.description}</p>
-                              </div>
-                            </div>
-                          </div>
 
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <Star className="w-5 h-5 text-[#F7C948]" />
-                              <span className="text-[#1E4D4C]">{reward.points} pontos</span>
-                            </div>
-                            
-                            {reward.unlocked ? (
-                              <Badge className="bg-[#6B8E23] text-white">
-                                <CheckCircle className="w-3 h-3 mr-1" />
-                                Resgatado
-                              </Badge>
-                            ) : reward.available ? (
-                              <AnimatedButton
-                                onClick={() => handleRequestReward(reward)}
-                                variant="primary"
-                                className="text-sm py-2 px-4"
-                                ariaLabel={`Solicitar ${reward.name}`}
-                              >
-                                Solicitar
-                              </AnimatedButton>
-                            ) : (
-                              <Badge variant="outline" className="text-[#1E4D4C]/50">
-                                Bloqueado
-                              </Badge>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </motion.div>
-                  ))}
-                </div>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Star className="w-5 h-5 text-[#F7C948]" />
+                                  <span className="text-[#1E4D4C]">{reward.points} pontos</span>
+                                </div>
+                                
+                                {reward.unlocked ? (
+                                  <Badge className="bg-[#6B8E23] text-white">
+                                    <CheckCircle className="w-3 h-3 mr-1" />
+                                    Resgatado
+                                  </Badge>
+                                ) : reward.requested ? (
+                                  <Badge className="bg-[#F7C948] text-[#1E4D4C]">
+                                    <Clock className="w-3 h-3 mr-1" />
+                                    Pendente
+                                  </Badge>
+                                ) : canRequest ? (
+                                  <AnimatedButton
+                                    onClick={() => handleRequestReward(reward)}
+                                    variant="primary"
+                                    className="text-sm py-2 px-4"
+                                    ariaLabel={`Solicitar ${reward.name}`}
+                                  >
+                                    Solicitar
+                                  </AnimatedButton>
+                                ) : (
+                                  <Badge variant="outline" className="text-[#1E4D4C]/50">
+                                    Bloqueado
+                                  </Badge>
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </TabsContent>
 
@@ -496,58 +513,79 @@ export default function DashboardSchool({ onLogout, showNotification }: Dashboar
                   </p>
                 </motion.div>
 
-                <div className="space-y-4">
-                  {collectionHistory.map((collection, index) => (
-                    <motion.div
-                      key={collection.id}
-                      initial={{ x: -20, opacity: 0 }}
-                      animate={{ x: 0, opacity: 1 }}
-                      transition={{ delay: index * 0.1 }}
-                    >
-                      <Card className="border-none shadow-lg">
-                        <CardContent className="p-6">
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-start gap-4">
-                              <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                                collection.status === 'completed' ? 'bg-[#6B8E23]/10' : 'bg-[#F7C948]/10'
-                              }`}>
-                                <Truck className={`w-6 h-6 ${
-                                  collection.status === 'completed' ? 'text-[#6B8E23]' : 'text-[#F7C948]'
-                                }`} />
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-3 mb-2">
-                                  <h4 className="text-[#1E4D4C]">Coleta {collection.date}</h4>
-                                  {collection.status === 'completed' ? (
-                                    <Badge className="bg-[#6B8E23] text-white">
-                                      <CheckCircle className="w-3 h-3 mr-1" />
-                                      Concluída
-                                    </Badge>
-                                  ) : (
-                                    <Badge className="bg-[#F7C948] text-[#1E4D4C]">
-                                      <Clock className="w-3 h-3 mr-1" />
-                                      Agendada
-                                    </Badge>
-                                  )}
-                                </div>
-                                <div className="space-y-1">
-                                  <div className="flex items-center gap-2 text-sm text-[#1E4D4C]/70">
-                                    <Droplet className="w-3 h-3" />
-                                    Volume: {collection.volume}L
+                {collectionHistory.length === 0 ? (
+                  <Card className="border-none shadow-lg">
+                    <CardContent className="p-12 text-center">
+                      <Truck className="w-16 h-16 text-[#1E4D4C]/30 mx-auto mb-4" />
+                      <p className="text-[#1E4D4C]/70">Nenhuma coleta registrada ainda</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="space-y-4">
+                    {collectionHistory.map((collection, index) => {
+                      const collectionDate = collection.scheduledDate 
+                        ? new Date(collection.scheduledDate).toLocaleDateString('pt-BR')
+                        : collection.completedAt
+                        ? new Date(collection.completedAt).toLocaleDateString('pt-BR')
+                        : 'Data não disponível';
+                      
+                      const status = collection.status || (collection.completedAt ? 'completed' : 'scheduled');
+                      
+                      return (
+                        <motion.div
+                          key={collection.id}
+                          initial={{ x: -20, opacity: 0 }}
+                          animate={{ x: 0, opacity: 1 }}
+                          transition={{ delay: index * 0.1 }}
+                        >
+                          <Card className="border-none shadow-lg">
+                            <CardContent className="p-6">
+                              <div className="flex items-start justify-between">
+                                <div className="flex items-start gap-4">
+                                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                                    status === 'completed' ? 'bg-[#6B8E23]/10' : 'bg-[#F7C948]/10'
+                                  }`}>
+                                    <Truck className={`w-6 h-6 ${
+                                      status === 'completed' ? 'text-[#6B8E23]' : 'text-[#F7C948]'
+                                    }`} />
                                   </div>
-                                  <div className="flex items-center gap-2 text-sm text-[#F7C948]">
-                                    <Star className="w-3 h-3" />
-                                    +{collection.points} pontos
+                                  <div>
+                                    <div className="flex items-center gap-3 mb-2">
+                                      <h4 className="text-[#1E4D4C]">Coleta {collectionDate}</h4>
+                                      {status === 'completed' ? (
+                                        <Badge className="bg-[#6B8E23] text-white">
+                                          <CheckCircle className="w-3 h-3 mr-1" />
+                                          Concluída
+                                        </Badge>
+                                      ) : (
+                                        <Badge className="bg-[#F7C948] text-[#1E4D4C]">
+                                          <Clock className="w-3 h-3 mr-1" />
+                                          Agendada
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2 text-sm text-[#1E4D4C]/70">
+                                        <Droplet className="w-3 h-3" />
+                                        Volume: {collection.volume || collection.estimatedVolume || 0}L
+                                      </div>
+                                      {collection.pointsEarned && (
+                                        <div className="flex items-center gap-2 text-sm text-[#F7C948]">
+                                          <Star className="w-3 h-3" />
+                                          +{collection.pointsEarned} pontos
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               </div>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </motion.div>
-                  ))}
-                </div>
+                            </CardContent>
+                          </Card>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </TabsContent>
 
@@ -565,73 +603,89 @@ export default function DashboardSchool({ onLogout, showNotification }: Dashboar
                 </motion.div>
 
                 {/* Your Position */}
-                <motion.div
-                  initial={{ scale: 0.95, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                >
-                  <Card className="border-none shadow-lg bg-gradient-to-br from-[#1E4D4C] to-[#6B8E23] text-white">
-                    <CardContent className="p-6">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="opacity-90 mb-1">Sua Posição</p>
-                          <h3>{schoolData.ranking}º lugar</h3>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <Trophy className="w-12 h-12" />
+                {currentRank && (
+                  <motion.div
+                    initial={{ scale: 0.95, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                  >
+                    <Card className="border-none shadow-lg bg-gradient-to-br from-[#1E4D4C] to-[#6B8E23] text-white">
+                      <CardContent className="p-6">
+                        <div className="flex items-center justify-between">
                           <div>
-                            <div className="text-3xl">{schoolData.points}</div>
-                            <p className="opacity-90 text-sm">pontos</p>
+                            <p className="opacity-90 mb-1">Sua Posição</p>
+                            <h3>{currentRank}º lugar</h3>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <Trophy className="w-12 h-12" />
+                            <div>
+                              <div className="text-3xl">{schoolData.points || 0}</div>
+                              <p className="opacity-90 text-sm">pontos</p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                )}
 
                 {/* Top Schools */}
-                <div className="space-y-3">
-                  {topSchools.map((school, index) => (
-                    <motion.div
-                      key={school.position}
-                      initial={{ x: -20, opacity: 0 }}
-                      animate={{ x: 0, opacity: 1 }}
-                      transition={{ delay: index * 0.1 }}
-                    >
-                      <Card className={`border-none shadow-lg ${
-                        school.position === schoolData.ranking ? 'ring-2 ring-[#6B8E23]' : ''
-                      }`}>
-                        <CardContent className="p-6">
-                          <div className="flex items-center gap-4">
-                            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                              school.position === 1 ? 'bg-[#F7C948]' :
-                              school.position === 2 ? 'bg-[#E5E5E5]' :
-                              school.position === 3 ? 'bg-[#CD7F32]' :
-                              'bg-[#F4F1ED]'
-                            }`}>
-                              <span className={`${
-                                school.position <= 3 ? 'text-white' : 'text-[#1E4D4C]'
-                              }`}>
-                                {school.position}º
-                              </span>
-                            </div>
-                            <div className="flex-1">
-                              <h4 className="text-[#1E4D4C]">{school.name}</h4>
-                              <div className="flex items-center gap-2 text-sm text-[#1E4D4C]/70">
-                                <Star className="w-3 h-3 text-[#F7C948]" />
-                                {school.points.toLocaleString()} pontos
+                {ranking?.ranking && ranking.ranking.length > 0 ? (
+                  <div className="space-y-3">
+                    {ranking.ranking.map((school: any, index: number) => {
+                      const position = school.position || index + 1;
+                      const isCurrentSchool = school.id === schoolData.id;
+                      
+                      return (
+                        <motion.div
+                          key={school.id}
+                          initial={{ x: -20, opacity: 0 }}
+                          animate={{ x: 0, opacity: 1 }}
+                          transition={{ delay: index * 0.1 }}
+                        >
+                          <Card className={`border-none shadow-lg ${
+                            isCurrentSchool ? 'ring-2 ring-[#6B8E23]' : ''
+                          }`}>
+                            <CardContent className="p-6">
+                              <div className="flex items-center gap-4">
+                                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                                  position === 1 ? 'bg-[#F7C948]' :
+                                  position === 2 ? 'bg-[#E5E5E5]' :
+                                  position === 3 ? 'bg-[#CD7F32]' :
+                                  'bg-[#F4F1ED]'
+                                }`}>
+                                  <span className={`${
+                                    position <= 3 ? 'text-white' : 'text-[#1E4D4C]'
+                                  }`}>
+                                    {position}º
+                                  </span>
+                                </div>
+                                <div className="flex-1">
+                                  <h4 className="text-[#1E4D4C]">{school.name}</h4>
+                                  <div className="flex items-center gap-2 text-sm text-[#1E4D4C]/70">
+                                    <Star className="w-3 h-3 text-[#F7C948]" />
+                                    {(school.points || 0).toLocaleString()} pontos
+                                  </div>
+                                </div>
+                                {isCurrentSchool && (
+                                  <Badge className="bg-[#6B8E23] text-white">
+                                    Você
+                                  </Badge>
+                                )}
                               </div>
-                            </div>
-                            {school.position === schoolData.ranking && (
-                              <Badge className="bg-[#6B8E23] text-white">
-                                Você
-                              </Badge>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </motion.div>
-                  ))}
-                </div>
+                            </CardContent>
+                          </Card>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <Card className="border-none shadow-lg">
+                    <CardContent className="p-12 text-center">
+                      <Trophy className="w-16 h-16 text-[#1E4D4C]/30 mx-auto mb-4" />
+                      <p className="text-[#1E4D4C]/70">Nenhum ranking disponível no momento</p>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             </TabsContent>
           </div>

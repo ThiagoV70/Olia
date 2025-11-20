@@ -55,6 +55,7 @@
     },
     server: {
       port: 3000,
+      strictPort: true, // Impede que o Vite use outra porta se 3000 estiver ocupada
       open: true,
     },
   });

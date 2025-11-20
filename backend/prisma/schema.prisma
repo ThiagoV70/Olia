@@ -55,6 +55,8 @@ model User {
   address       String?
   neighborhood  String?
   city          String?
+  lat           Float?
+  lng           Float?
   bolsaFamilia  String?  @unique
   hasBolsaFamilia Boolean @default(false)
   totalLiters   Float    @default(0)

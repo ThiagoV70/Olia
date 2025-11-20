@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { AuthRequest } from '../middleware/auth.middleware';
+import { geocodeAddress } from '../services/geolocation.service';
 
 const prisma = new PrismaClient();
 
@@ -47,6 +48,12 @@ export const getSchoolProfile = async (req: AuthRequest, res: Response) => {
 export const updateSchoolProfile = async (req: AuthRequest, res: Response) => {
   try {
     const schoolId = req.user!.id;
+    const existing = await prisma.school.findUnique({ where: { id: schoolId } });
+
+    if (!existing) {
+      return res.status(404).json({ message: 'Escola não encontrada' });
+    }
+
     const {
       name,
       address,
@@ -59,6 +66,23 @@ export const updateSchoolProfile = async (req: AuthRequest, res: Response) => {
       lat,
       lng,
     } = req.body;
+
+    const resolvedAddress = {
+      address: address ?? existing.address,
+      neighborhood: neighborhood ?? existing.neighborhood,
+      city: city ?? existing.city,
+    };
+
+    let geocode = null;
+    if (
+      (address !== undefined || neighborhood !== undefined || city !== undefined) &&
+      resolvedAddress.address
+    ) {
+      const fullAddress = [resolvedAddress.address, resolvedAddress.neighborhood, resolvedAddress.city]
+        .filter(Boolean)
+        .join(', ');
+      geocode = await geocodeAddress(fullAddress);
+    }
 
     const school = await prisma.school.update({
       where: { id: schoolId },
@@ -73,6 +97,12 @@ export const updateSchoolProfile = async (req: AuthRequest, res: Response) => {
         ...(storageCapacity && { storageCapacity }),
         ...(lat !== undefined && { lat }),
         ...(lng !== undefined && { lng }),
+        ...(geocode && {
+          lat: geocode.lat,
+          lng: geocode.lng,
+          neighborhood: geocode.neighborhood || resolvedAddress.neighborhood,
+          city: geocode.city || resolvedAddress.city,
+        }),
       },
       select: {
         id: true,

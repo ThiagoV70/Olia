@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { hashPassword, comparePassword } from '../utils/password.util';
 import { generateToken } from '../utils/jwt.util';
+import { geocodeAddress } from '../services/geolocation.service';
 
 const prisma = new PrismaClient();
 
@@ -37,6 +38,11 @@ export const registerUser = async (req: Request, res: Response) => {
     // Hash da senha
     const hashedPassword = await hashPassword(password);
 
+    const fullAddress = [address, neighborhood, city]
+      .filter(Boolean)
+      .join(', ');
+    const geocode = fullAddress ? await geocodeAddress(fullAddress) : null;
+
     // Criar usuário
     const user = await prisma.user.create({
       data: {
@@ -50,6 +56,8 @@ export const registerUser = async (req: Request, res: Response) => {
         city,
         bolsaFamilia,
         hasBolsaFamilia: hasBolsaFamilia || false,
+        lat: geocode?.lat,
+        lng: geocode?.lng,
       },
       select: {
         id: true,
@@ -60,6 +68,8 @@ export const registerUser = async (req: Request, res: Response) => {
         address: true,
         neighborhood: true,
         city: true,
+        lat: true,
+        lng: true,
         bolsaFamilia: true,
         hasBolsaFamilia: true,
         totalLiters: true,
@@ -119,6 +129,11 @@ export const registerSchool = async (req: Request, res: Response) => {
     // Hash da senha
     const hashedPassword = await hashPassword(password);
 
+    const fullAddress = [address, neighborhood, city]
+      .filter(Boolean)
+      .join(', ');
+    const geocode = fullAddress ? await geocodeAddress(fullAddress) : null;
+
     // Criar escola
     const school = await prisma.school.create({
       data: {
@@ -133,6 +148,10 @@ export const registerSchool = async (req: Request, res: Response) => {
         responsiblePhone,
         responsibleEmail,
         storageCapacity,
+        lat: geocode?.lat,
+        lng: geocode?.lng,
+        neighborhood: geocode?.neighborhood || neighborhood,
+        city: geocode?.city || city,
       },
       select: {
         id: true,
@@ -142,6 +161,8 @@ export const registerSchool = async (req: Request, res: Response) => {
         address: true,
         neighborhood: true,
         city: true,
+        lat: true,
+        lng: true,
         responsibleName: true,
         responsiblePhone: true,
         responsibleEmail: true,

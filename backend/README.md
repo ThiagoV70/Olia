@@ -137,6 +137,9 @@ Authorization: Bearer <token>
 - `PORT` - Porta do servidor (padrão: 5000)
 - `NODE_ENV` - Ambiente (development/production)
 - `FRONTEND_URL` - URL do frontend para CORS
+- `GEO_API_URL` - (Opcional) Endpoint do serviço de geocodificação (padrão: Nominatim)
+- `GEO_USER_AGENT` - User-Agent utilizado nas requisições de geolocalização
+- `GEO_VIEWBOX` - Bounding box para limitar a busca (padrão cobre Recife/PE)
 
 ## Banco de Dados
 

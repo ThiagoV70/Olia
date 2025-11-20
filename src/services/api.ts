@@ -1,5 +1,10 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
+// Log para debug (remover em produção)
+if (import.meta.env.DEV) {
+  console.log('🔗 API URL:', API_URL);
+}
+
 // Armazenar token no localStorage
 export const setToken = (token: string) => {
   localStorage.setItem('olia_token', token);
@@ -25,17 +30,25 @@ const request = async <T>(
     ...options.headers,
   };
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  try {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      ...options,
+      headers,
+    });
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: 'Erro na requisição' }));
-    throw new Error(error.message || `Erro ${response.status}`);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Erro na requisição' }));
+      throw new Error(error.message || `Erro ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error: any) {
+    // Melhor tratamento de erro de conexão
+    if (error.message === 'Failed to fetch' || error.name === 'TypeError') {
+      throw new Error('Não foi possível conectar ao servidor. Verifique se o backend está rodando em http://localhost:5000');
+    }
+    throw error;
   }
-
-  return response.json();
 };
 
 // ==================== AUTENTICAÇÃO ====================

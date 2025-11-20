@@ -2,10 +2,12 @@ import { motion } from 'motion/react';
 import { Button } from './ui/button';
 import { ButtonProps } from './ui/button';
 
-interface AnimatedButtonProps extends ButtonProps {
-  children: React.ReactNode;
+interface AnimatedButtonProps extends Omit<ButtonProps, 'variant' | 'children'> {
+  children?: React.ReactNode;
   variant?: 'primary' | 'secondary' | 'outline' | 'warning';
   ariaLabel?: string;
+  onClick?: () => void | Promise<void>;
+  className?: string;
 }
 
 export default function AnimatedButton({ 

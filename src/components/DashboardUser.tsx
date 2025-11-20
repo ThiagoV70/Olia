@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
 import {
   Droplet,
@@ -28,6 +28,31 @@ import LoadingAnimation from './LoadingAnimation';
 import { Notification } from './NotificationBanner';
 import { toast } from 'sonner';
 import { userApi, schoolApi, donationApi, pickupApi, authApi } from '../services/api';
+import { MapContainer, TileLayer, Marker, Popup, CircleMarker } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+// Fix para ícones do Leaflet no Vite
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
+
+type LatLngTuple = [number, number];
+type SchoolWithCoords = {
+  id: string;
+  name: string;
+  address?: string | null;
+  neighborhood?: string | null;
+  capacity?: number | null;
+  lat: number;
+  lng: number;
+  [key: string]: any;
+};
+
+const RECIFE_CENTER: LatLngTuple = [-8.05, -34.9];
 
 interface DashboardUserProps {
   onLogout: () => void;
@@ -48,11 +73,17 @@ export default function DashboardUser({ onLogout, showNotification }: DashboardU
   const [schools, setSchools] = useState<any[]>([]);
   const [donationHistory, setDonationHistory] = useState<any[]>([]);
   const [pickupLocations, setPickupLocations] = useState<any[]>([]);
+  const [mapReady, setMapReady] = useState(false);
   
   const [editFormData, setEditFormData] = useState<any>({});
 
   useEffect(() => {
     loadData();
+    // Aguardar um pouco para garantir que o Leaflet está carregado
+    const timer = setTimeout(() => {
+      setMapReady(true);
+    }, 300);
+    return () => clearTimeout(timer);
   }, []);
 
   const loadData = async () => {
@@ -80,6 +111,46 @@ export default function DashboardUser({ onLogout, showNotification }: DashboardU
       setLoading(false);
     }
   };
+
+  const schoolsWithCoords = useMemo<SchoolWithCoords[]>(() => {
+    if (!schools?.length) return [];
+    return (
+      schools
+        .map((school: any) => {
+          const lat = typeof school.lat === 'number' ? school.lat : parseFloat(school.lat);
+          const lng = typeof school.lng === 'number' ? school.lng : parseFloat(school.lng);
+          if (Number.isNaN(lat) || Number.isNaN(lng)) {
+            return null;
+          }
+          return { ...school, lat, lng };
+        })
+        .filter((school): school is SchoolWithCoords => Boolean(school)) ?? []
+    );
+  }, [schools]);
+
+  const filteredSchools = useMemo<SchoolWithCoords[]>(() => {
+    if (!schoolsWithCoords.length) return [];
+    if (selectedFilter === 'all') return schoolsWithCoords;
+    const normalized = selectedFilter.toLowerCase();
+    return schoolsWithCoords.filter((school) =>
+      school.neighborhood?.toLowerCase().includes(normalized)
+    );
+  }, [schoolsWithCoords, selectedFilter]);
+
+  const mapCenter = useMemo<LatLngTuple>(() => {
+    if (userData?.lat && userData?.lng) {
+      return [userData.lat, userData.lng];
+    }
+    if (filteredSchools.length) {
+      return [filteredSchools[0].lat, filteredSchools[0].lng];
+    }
+    if (schoolsWithCoords.length) {
+      return [schoolsWithCoords[0].lat, schoolsWithCoords[0].lng];
+    }
+    return RECIFE_CENTER;
+  }, [userData, filteredSchools, schoolsWithCoords]);
+  const hasUserLocation = Boolean(userData?.lat && userData?.lng);
+  const hasSchools = filteredSchools.length > 0;
 
   const progress = userStats ? (userStats.totalLiters / userStats.nextReward) * 100 : 0;
 
@@ -243,96 +314,122 @@ export default function DashboardUser({ onLogout, showNotification }: DashboardU
                   </div>
                 </motion.div>
 
-              {/* Mapa (simulado) */}
-              <div className="flex-1 relative bg-gradient-to-br from-[#E5E5E5] to-[#F4F1ED] overflow-hidden">
-                  <div className="absolute inset-0 flex items-center justify-center text-[#1E4D4C]/30">
-                    <MapIcon className="w-32 h-32" />
-                  </div>
-
-                  {/* Marcadores das escolas */}
-                  <div className="absolute inset-0 p-8">
-                    {schools.map((school, index) => (
-                      <motion.div
-                        key={school.id}
-                        initial={{ scale: 0, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        transition={{ delay: index * 0.1 }}
-                        style={{
-                          position: 'absolute',
-                          left: `${20 + index * 25}%`,
-                          top: `${30 + index * 15}%`,
-                        }}
+              {/* Mapa real */}
+              <div className="flex-1 relative bg-gradient-to-br from-[#E5E5E5] to-[#F4F1ED] px-4 pb-12 overflow-hidden">
+                <div className="max-w-6xl mx-auto h-full">
+                  <div className="h-[420px] md:h-[520px] rounded-[32px] overflow-hidden shadow-2xl border border-white/60 bg-white relative">
+                    {mapReady ? (
+                      <MapContainer
+                        center={mapCenter}
+                        zoom={13}
+                        scrollWheelZoom={true}
+                        style={{ height: '100%', width: '100%', zIndex: 0 }}
+                        attributionControl={false}
                       >
-                        <motion.button
-                          whileHover={{ scale: 1.2 }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => setSelectedSchool(school)}
-                          className="relative group"
-                          aria-label={`Ver ${school.name}`}
-                        >
-                          <div className="w-12 h-12 bg-[#6B8E23] rounded-full flex items-center justify-center shadow-lg border-4 border-white">
-                            <MapPin className="w-6 h-6 text-white fill-white" />
-                          </div>
-                          <div className="absolute -top-2 -right-2 w-5 h-5 bg-[#F7C948] rounded-full border-2 border-white flex items-center justify-center">
-                            <span className="text-xs text-[#1E4D4C]">{index + 1}</span>
-                          </div>
-                        </motion.button>
-                      </motion.div>
-                    ))}
-                  </div>
+                          <TileLayer
+                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                          />
 
-                  {/* Cartão de escola selecionada */}
-                  {selectedSchool && (
-                    <motion.div
-                      initial={{ y: 100, opacity: 0 }}
-                      animate={{ y: 0, opacity: 1 }}
-                      exit={{ y: 100, opacity: 0 }}
-                      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                      className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl p-6 max-w-2xl mx-auto z-30"
+                          {filteredSchools.map((school) => (
+                            <Marker
+                              key={school.id}
+                              position={[school.lat, school.lng]}
+                              eventHandlers={{ click: () => setSelectedSchool(school) }}
+                            >
+                              <Popup>
+                                <div className="text-[#1E4D4C]">
+                                  <strong className="block">{school.name}</strong>
+                                  <span className="text-xs text-[#1E4D4C]/70">
+                                    {school.neighborhood || 'Recife'}
+                                  </span>
+                                </div>
+                              </Popup>
+                            </Marker>
+                          ))}
+
+                          {hasUserLocation && (
+                            <CircleMarker
+                              center={[userData!.lat, userData!.lng]}
+                              radius={10}
+                              pathOptions={{
+                                color: '#1E4D4C',
+                                fillColor: '#1E4D4C',
+                                fillOpacity: 0.8,
+                              }}
+                            >
+                              <Popup>Você está aqui</Popup>
+                            </CircleMarker>
+                          )}
+                        </MapContainer>
+                    ) : null}
+                    
+                    {!mapReady && (
+                      <div className="absolute inset-0 flex items-center justify-center text-[#1E4D4C]/70 bg-white/90 z-10">
+                        Carregando mapa...
+                      </div>
+                    )}
+                    
+                    {mapReady && !hasSchools && !hasUserLocation && (
+                      <div className="absolute inset-0 flex items-center justify-center text-[#1E4D4C]/70 px-6 text-center pointer-events-none bg-white/70 z-10">
+                        Nenhuma localização disponível no momento.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Cartão de escola selecionada */}
+                {selectedSchool && (
+                  <motion.div
+                    initial={{ y: 100, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ y: 100, opacity: 0 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                    className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-2xl bg-white rounded-3xl shadow-2xl p-6 z-30"
+                  >
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <h3 className="text-[#1E4D4C] mb-1">{selectedSchool.name}</h3>
+                        <div className="flex items-center gap-2 text-[#6B8E23] mb-2">
+                          <Navigation className="w-4 h-4" />
+                          <span className="text-sm">{selectedSchool.neighborhood || 'Recife'}</span>
+                        </div>
+                      </div>
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => setSelectedSchool(null)}
+                        className="text-2xl text-[#1E4D4C] hover:text-[#6B8E23] w-8 h-8 flex items-center justify-center"
+                        aria-label="Fechar"
+                      >
+                        ×
+                      </motion.button>
+                    </div>
+
+                    <div className="space-y-3 mb-4">
+                      <div className="flex items-center gap-2 text-[#1E4D4C]">
+                        <MapPin className="w-4 h-4 flex-shrink-0" />
+                        <span className="text-sm">{selectedSchool.address || 'Endereço não informado'}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[#1E4D4C] text-sm">Capacidade disponível:</span>
+                        <Badge variant="outline" className="bg-[#6B8E23]/10 text-[#6B8E23]">
+                          {selectedSchool.capacity || 0}%
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <AnimatedButton
+                      onClick={() => handleDonateClick(selectedSchool)}
+                      variant="primary"
+                      className="w-full flex items-center justify-center gap-2"
+                      ariaLabel="Doar óleo nesta escola"
                     >
-                      <div className="flex items-start justify-between mb-4">
-                        <div>
-                          <h3 className="text-[#1E4D4C] mb-1">{selectedSchool.name}</h3>
-                            <div className="flex items-center gap-2 text-[#6B8E23] mb-2">
-                            <Navigation className="w-4 h-4" />
-                            <span className="text-sm">{selectedSchool.neighborhood || 'Bairro'}</span>
-                          </div>
-                        </div>
-                        <motion.button
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => setSelectedSchool(null)}
-                          className="text-2xl text-[#1E4D4C] hover:text-[#6B8E23] w-8 h-8 flex items-center justify-center"
-                          aria-label="Fechar"
-                        >
-                          ×
-                        </motion.button>
-                      </div>
-
-                      <div className="space-y-3 mb-4">
-                        <div className="flex items-center gap-2 text-[#1E4D4C]">
-                          <MapPin className="w-4 h-4 flex-shrink-0" />
-                          <span className="text-sm">{selectedSchool.address}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[#1E4D4C] text-sm">Capacidade disponível:</span>
-                          <Badge variant="outline" className="bg-[#6B8E23]/10 text-[#6B8E23]">
-                            {selectedSchool.capacity || 0}%
-                          </Badge>
-                        </div>
-                      </div>
-
-                      <AnimatedButton
-                        onClick={() => handleDonateClick(selectedSchool)}
-                        variant="primary"
-                        className="w-full flex items-center justify-center gap-2"
-                        ariaLabel="Doar óleo nesta escola"
-                      >
-                        <Droplet className="w-5 h-5" />
-                        Doar óleo aqui
-                      </AnimatedButton>
-                    </motion.div>
-                  )}
+                      <Droplet className="w-5 h-5" />
+                      Doar óleo aqui
+                    </AnimatedButton>
+                  </motion.div>
+                )}
               </div>
             </TabsContent>
 
